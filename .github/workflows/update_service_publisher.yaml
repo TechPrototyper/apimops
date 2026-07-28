@@ -1,0 +1,165 @@
+name: Update API Management Service using Publisher Tool
+
+on:
+  workflow_call:
+    inputs:
+      API_MANAGEMENT_ENVIRONMENT:
+        required: true
+        type: string
+      API_MANAGEMENT_SERVICE_NAME:
+        required: true
+        type: string
+      CONFIGURATION_YAML_PATH:
+        required: false
+        type: string
+      COMMIT_ID:
+        required: false
+        type: string
+      API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH:
+        required: true
+        type: string
+
+  workflow_dispatch:
+    inputs:
+      API_MANAGEMENT_ENVIRONMENT:
+        description: 'API Management Environment'
+        required: true
+        type: string
+      API_MANAGEMENT_SERVICE_NAME:
+        description: 'API Management Service Name'
+        required: true
+        type: string
+      CONFIGURATION_YAML_PATH:
+        description: 'Path to configuration YAML'
+        required: false
+        type: string
+      COMMIT_ID:
+        description: 'Commit ID to deploy'
+        required: false
+        type: string
+      API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH:
+        description: 'Output folder path for API Management Service'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.API_MANAGEMENT_SERVICE_NAME }}
+    env:
+      GH_APIMOPS_URL: ${{ secrets.GH_APIMOPS_URL }}
+      GH_APIMDATA_URL: ${{ secrets.GH_APIMDATA_URL }}
+      GH_APIMOPS_TOKEN: ${{ secrets.GH_APIMOPS_TOKEN }}
+      GH_APIMDATA_TOKEN: ${{ secrets.GH_APIMDATA_TOKEN }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+    
+    steps:
+
+      - name: Extract owner/repo from GH_APIMDATA_URL
+        id: extract_repo
+        run: |
+          REPO_URL=${{ secrets.GH_APIMDATA_URL }}
+          OWNER_REPO=$(echo ${REPO_URL} | sed 's/https:\/\/github.com\///; s/\.git$//')
+          echo "Extracted OWNER_REPO: ${OWNER_REPO}"
+          echo "repo=${OWNER_REPO}" >> $GITHUB_OUTPUT
+
+      - name: Checkout data repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.extract_repo.outputs.repo }}
+          ref: ${{ inputs.API_MANAGEMENT_SERVICE_NAME }}
+          token: ${{ secrets.GH_APIMDATA_TOKEN }}
+          fetch-depth: 0
+          path: data-repo
+
+      - name: Checkout operations repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: main
+          token: ${{ secrets.GH_APIMOPS_TOKEN }}
+          path: apimops
+
+      - name: "Perform namevalue secret substitution in configuration.${{ inputs.API_MANAGEMENT_ENVIRONMENT }}.yaml"
+        if: inputs.CONFIGURATION_YAML_PATH != ''
+        uses: cschleiden/replace-tokens@v1
+        with:
+          tokenPrefix: "{#"
+          tokenSuffix: "#}"
+          files: ${{ format('["**/{0}"]', inputs.CONFIGURATION_YAML_PATH) }}
+
+      - name: Determine Platform
+        id: platform
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            echo "platform=linux-x64" >> $GITHUB_ENV
+            echo "platform=linux-x64" >> $GITHUB_OUTPUT
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "platform=win-x64" >> $GITHUB_ENV
+            echo "platform=win-x64" >> $GITHUB_OUTPUT
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            echo "platform=osx-x64" >> $GITHUB_ENV
+            echo "platform=osx-x64" >> $GITHUB_OUTPUT
+          else
+            echo "Unsupported platform: $RUNNER_OS"
+            exit 1
+          fi
+
+      - name: Download Microsoft Publisher Tool (APIOps v6.0.2)
+        run: |
+          TOOL_VERSION="v6.0.2"
+          PLATFORM="${{ steps.platform.outputs.platform }}"
+          
+          DOWNLOAD_URL="https://github.com/Azure/apiops/releases/download/${TOOL_VERSION}/publisher-${PLATFORM}.zip"
+          
+          echo "Downloading Publisher from $DOWNLOAD_URL"
+          curl -L -o publisher.zip "$DOWNLOAD_URL"
+          
+          echo "Unzipping Publisher binary..."
+          unzip -o publisher.zip -d publisher_dist
+          
+          mkdir -p publisher-tool
+          PUBLISHER_BIN=$(find publisher_dist -type f -name "publisher" -o -name "publisher.exe" | head -n 1)
+          cp "$PUBLISHER_BIN" publisher-tool/publisher
+          chmod +x publisher-tool/publisher
+          
+          BIN_DIR=$(dirname "$PUBLISHER_BIN")
+          cp -r "$BIN_DIR/"* publisher-tool/
+
+      - name: Verify Publisher binary
+        run: |
+          ls -la publisher-tool/
+          file publisher-tool/publisher
+
+      - name: Debug Deployment Inputs
+        env:
+          COMMIT_ID: ${{ inputs.COMMIT_ID }}
+        run: |
+          cd data-repo
+          echo "Current Working Directory: $(pwd)"
+          echo "Git Status:"
+          git status
+          echo "Target Folder Contents (data-repo/${{ inputs.API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH }}):"
+          ls -la ${{ inputs.API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH }} || true
+          echo "Target Commit ID: $COMMIT_ID"
+
+      - name: Run APIOps Publisher
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+          API_MANAGEMENT_SERVICE_NAME: ${{ inputs.API_MANAGEMENT_SERVICE_NAME }}
+          API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH: ${{ inputs.API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH }}
+          COMMIT_ID: ${{ inputs.COMMIT_ID }}
+        run: |
+          set -e
+          echo "Executing Microsoft APIOps Publisher v6.0.2..."
+          cd data-repo
+          echo "Commit ID passed to Publisher: $COMMIT_ID"
+          LD_LIBRARY_PATH=$(pwd)/../publisher-tool ../publisher-tool/publisher

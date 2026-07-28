@@ -1,0 +1,10 @@
+PyGithub
+azure-identity
+azure-keyvault-secrets
+pyyaml
+colorama
+azure-mgmt-resource
+azure-mgmt-apimanagement
+azure-mgmt-keyvault
+pyinstaller
+

@@ -1,0 +1,12 @@
+[
+    {
+        "name": "CommitMessenger",
+        "id": "asst_ffJsjgRjqcUoP6sPK6QHpS2u",
+        "description": "Liefert eine Einzeilenzusammenfassung eines git diff-logs, GPT4-32K"
+    },
+    {
+        "name": "CommitMessie35",
+        "id": "asst_1ozc8ULSoX00Rqom79RqXyuC",
+        "description": "Liefert eine Einzeilenzusammenfassung eines git diff-logs, GPT35-16K"
+    }
+]

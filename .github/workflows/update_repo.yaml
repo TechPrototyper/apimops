@@ -1,0 +1,154 @@
+name: Update Repo from API Management Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      CONFIGURATION_YAML_PATH:
+        description: 'Choose whether to extract all Apis or extract apis listed in an extraction configuration file'
+        required: false
+        type: choice
+        options:
+        - Extract All APIs
+        - configuration.extractor.yaml
+        default: Extract All APIs
+      API_MANAGEMENT_SERVICE_NAME:
+        description: 'Choose which node to work on'
+        required: true
+        type: string
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone Data Repo
+        env:
+          GH_APIMDATA_TOKEN: ${{ secrets.GH_APIMDATA_TOKEN }}
+          GH_APIMDATA_URL: ${{ secrets.GH_APIMDATA_URL }}
+        run: |
+          DATA_REPO_URL=${GH_APIMDATA_URL#https://}
+          git clone https://${GH_APIMDATA_TOKEN}@${DATA_REPO_URL} data-repo
+          cd data-repo
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          git fetch --all
+          BRANCH_NAME=${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+          if ! git ls-remote --heads origin $BRANCH_NAME | grep -q $BRANCH_NAME; then
+            git checkout --orphan $BRANCH_NAME
+            git rm -rf .
+            git clean -fdx
+            git commit --allow-empty -m "Initial commit for $BRANCH_NAME"
+            git push --set-upstream origin $BRANCH_NAME
+          else
+            git checkout $BRANCH_NAME
+            git pull
+          fi
+
+      - name: Fetch Utility Files from Main Repo
+        run: |
+          echo "Copying utility files to data-repo..."
+          mkdir -p data-repo/scripts/asst
+          cp "scripts/asst/asst.sh" data-repo/scripts/asst/ || true
+          cp "scripts/asst/asst.py" data-repo/scripts/asst/ || true
+          cp "scripts/asst/commit_message.py" data-repo/scripts/asst/ || true
+          cp "scripts/asst/requirements.txt" data-repo/scripts/asst/ || true
+          echo "Files copied successfully to data-repo."
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r scripts/asst/requirements.txt || pip install pyyaml urllib3
+
+      - name: Determine Platform
+        id: platform
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            echo "platform=linux-x64" >> $GITHUB_ENV
+            echo "platform=linux-x64" >> $GITHUB_OUTPUT
+          elif [[ "$RUNNER_OS" == "Windows" ]]; then
+            echo "platform=win-x64" >> $GITHUB_ENV
+            echo "platform=win-x64" >> $GITHUB_OUTPUT
+          elif [[ "$RUNNER_OS" == "macOS" ]]; then
+            echo "platform=osx-x64" >> $GITHUB_ENV
+            echo "platform=osx-x64" >> $GITHUB_OUTPUT
+          else
+            echo "Unsupported platform: $RUNNER_OS"
+            exit 1
+          fi
+
+      - name: Download Extractor (APIOps v6.0.2)
+        run: |
+          TOOL_VERSION="v6.0.2"
+          PLATFORM="${{ steps.platform.outputs.platform }}"
+          DOWNLOAD_URL="https://github.com/Azure/apiops/releases/download/${TOOL_VERSION}/extractor-${PLATFORM}.zip"
+          
+          echo "Downloading Extractor from $DOWNLOAD_URL"
+          curl -L -o extractor.zip "$DOWNLOAD_URL"
+          
+          echo "Unzipping..."
+          unzip -o extractor.zip -d extractor_dist
+          
+          find extractor_dist -name "extractor*" -type f -exec chmod +x {} \;
+          EXTRACTOR_BIN=$(find extractor_dist -type f -name "extractor" -o -name "extractor.exe" | head -n 1)
+          cp "$EXTRACTOR_BIN" ./extractor
+          chmod +x ./extractor
+
+      - name: List downloaded artifacts
+        run: |
+          ls -la ./extractor
+
+      - name: Run Extractor
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP_NAME: ${{ secrets.AZURE_RESOURCE_GROUP_NAME }}
+          API_MANAGEMENT_SERVICE_NAME: ${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+          API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH: ${{ github.workspace }}/data-repo/apimartifacts/${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+          API_SPECIFICATION_FORMAT: ${{ vars.API_SPECIFICATION_FORMAT }}
+        run: |
+          set -e
+          cd $GITHUB_WORKSPACE/data-repo
+          find . -mindepth 1 ! -regex '^./\.git\(/.*\)?' -delete
+          $GITHUB_WORKSPACE/extractor
+
+      - name: Commit and Push Changes
+        env:
+          GH_APIMDATA_TOKEN: ${{ secrets.GH_APIMDATA_TOKEN }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_ENDPOINT: ${{ vars.AI_ENDPOINT }}
+          AI_MODEL: ${{ vars.AI_MODEL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd $GITHUB_WORKSPACE/data-repo
+          git add -A
+          git diff --cached > diff_output.tmp
+          if [ -s diff_output.tmp ]; then
+            DIFF_SIZE_KB=$(wc -c < diff_output.tmp | awk '{print $1/1024}')
+            DIFF_LINES=$(wc -l < diff_output.tmp)
+            echo "Changes detected: diff contains $DIFF_LINES lines and is $DIFF_SIZE_KB KB in size."
+            
+            head -c 16000 diff_output.tmp > diff_truncated.tmp
+            
+            COMMIT_MSG=$(python3 $GITHUB_WORKSPACE/scripts/asst/commit_message.py \
+              -f diff_truncated.tmp \
+              --fallback "Update APIM data on $(date '+%Y-%m-%d %H:%M')" 2>/dev/null)
+
+            if [ -z "$COMMIT_MSG" ]; then
+              COMMIT_MSG="Update APIM data on $(date '+%Y-%m-%d %H:%M')"
+            fi
+            
+            echo "Commit message: $COMMIT_MSG"
+            git commit -m "$COMMIT_MSG"
+            git push origin ${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+          else
+            echo "No changes to commit."
+          fi

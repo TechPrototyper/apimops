@@ -1,0 +1,56 @@
+# Ignore the .git directory itself
+/.git/
+
+# Ignore virtual environment directories
+/scripts/asst/.venv/
+/scripts/transfer/.venv/
+/scripts/common/.venv/
+/scripts/setup/.venv/
+# Platform-specific venvs (Ticket #4)
+venv_*/
+.venv/
+venv/
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore distribution and build directories
+/build/dist/
+/build/build/
+/build/.venv/
+dist/
+build/dist/
+build/build/
+build/.venv/
+/build/build/
+# /*.egg-info
+
+# Ignore editor directories and files
+.vscode/
+.idea/
+*.swp
+*~
+
+# Ignore configuration files with secrets (if applicable)
+# configs/*.json
+
+# Ignore operating system files
+.DS_Store
+Thumbs.db
+
+# Ignore temp data repos
+temp_data_repo/
+source-repo/
+
+# Ignore logfiles
+*.log
+
+binaries/
+bin/
+
+# Local configuration & private backup
+config.yaml
+backups/private_config/
+.env

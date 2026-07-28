@@ -1,0 +1,75 @@
+general:
+  apiops:
+    release_version: "6.0.2"
+    specification_format: "OpenAPIV3Yaml"
+    binaries:
+      win-x64:
+        publisher: "binaries/v6.0.2/win-x64/publisher/publisher.exe"
+        extractor: "binaries/v6.0.2/win-x64/extractor/extractor.exe"
+      linux-x64:
+        publisher: "binaries/v6.0.2/linux-x64/publisher/publisher"
+        extractor: "binaries/v6.0.2/linux-x64/extractor/extractor"
+      osx-x64:
+        publisher: "binaries/v6.0.2/osx-x64/publisher/publisher"
+        extractor: "binaries/v6.0.2/osx-x64/extractor/extractor"
+      osx-arm64:
+        publisher: "binaries/v6.0.2/osx-arm64/publisher/publisher"
+        extractor: "binaries/v6.0.2/osx-arm64/extractor/extractor"
+
+  github_solution:
+    repo: "apimops"
+    url: "https://github.com/your-org/apimops.git"
+    token: "<YOUR_GITHUB_PAT_TOKEN>"
+
+  github_data:
+    repo: "apimdata"
+    url: "https://github.com/your-org/apimdata.git"
+    token: "<YOUR_GITHUB_PAT_TOKEN>"
+
+  azure_default:
+    tenant_id: "<YOUR_AZURE_TENANT_ID>"
+    subscription_id: "<YOUR_AZURE_SUBSCRIPTION_ID>"
+    resource_group: "<YOUR_AZURE_RESOURCE_GROUP>"
+    sp_client_id: "<YOUR_SERVICE_PRINCIPAL_CLIENT_ID>"
+    sp_client_secret: "<YOUR_SERVICE_PRINCIPAL_CLIENT_SECRET>"
+
+  ai_assistant:
+    provider: "grok" # grok, github_models, azure_openai, local
+    endpoint: "https://api.x.ai/v1/chat/completions"
+    api_key: "<YOUR_XAI_API_KEY>"
+    model: "grok-build-0.1"
+    description: "Generiert automatische Einzeilen-Git-Commit-Messages aus Diff-Logs"
+
+apim_services:
+  DEV-APIM-SERVICE:
+    name: "Development APIM Instance"
+    azure:
+      tenant_id: "<AZURE_TENANT_ID>"
+      subscription_id: "<AZURE_SUBSCRIPTION_ID>"
+      resource_group: "rg-apim-dev-01"
+      sp_client_id: "<AZURE_CLIENT_ID>"
+      sp_client_secret: "<AZURE_CLIENT_SECRET>"
+
+  STAGE-APIM-SERVICE:
+    name: "Staging APIM Instance"
+    azure:
+      tenant_id: "<AZURE_TENANT_ID>"
+      subscription_id: "<AZURE_SUBSCRIPTION_ID>"
+      resource_group: "rg-apim-stage-01"
+      sp_client_id: "<AZURE_CLIENT_ID>"
+      sp_client_secret: "<AZURE_CLIENT_SECRET>"
+
+  PROD-APIM-SERVICE:
+    name: "Production APIM Instance"
+    azure:
+      tenant_id: "<AZURE_TENANT_ID>"
+      subscription_id: "<AZURE_SUBSCRIPTION_ID>"
+      resource_group: "rg-apim-prod-01"
+      sp_client_id: "<AZURE_CLIENT_ID>"
+      sp_client_secret: "<AZURE_CLIENT_SECRET>"
+
+adminuser:
+  firstname: "Firstname"
+  lastname: "Lastname"
+  email: "user@example.com"
+  git_username: "YourGitUsername"

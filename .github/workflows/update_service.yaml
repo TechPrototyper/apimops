@@ -1,0 +1,92 @@
+name: Update API Management Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      API_MANAGEMENT_SERVICE_NAME:
+        description: 'Choose which API Management Service to deploy to'
+        required: true
+        type: string
+      COMMIT_ID:
+        description: 'Optional: Specify the commit ID to deploy (defaults to the last commit if not specified)'
+        required: false
+      COMMIT_ID_CHOICE:
+        description: 'Choose "publish-all-artifacts-in-repo" only when you want to force republishing all artifacts (e.g., after a build failure). Otherwise stick with the default behavior of "publish-artifacts-in-last-commit"'
+        required: false
+        type: choice
+        default: "publish-artifacts-in-last-commit"
+        options:
+          - "publish-artifacts-in-last-commit"
+          - "publish-all-artifacts-in-repo"
+      unique_id:
+        description: 'Unique ID for the workflow run'
+        required: false
+
+jobs:
+  unique_id:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.unique_id != ''
+    runs-on: ubuntu-latest
+    steps:
+    - id: unique_id
+      name: ${{ github.event.inputs.unique_id }}
+      run: |
+        echo "Unique ID: ${{ github.event.inputs.unique_id }}"
+
+  determine-commit:
+    runs-on: ubuntu-latest
+    outputs:
+      final_commit_id: ${{ steps.set_commit_id.outputs.commit_id }}
+    steps:
+      - name: Debug Inputs
+        run: |
+          echo "All Inputs: ${{ toJson(github.event.inputs) }}"
+      - name: Log Unique ID
+        run: echo "The unique ID is ${{ github.event.inputs.unique_id }}"
+      - name: Extract owner/repo from GH_APIMDATA_URL
+        id: extract_repo
+        run: |
+          REPO_URL=${{ secrets.GH_APIMDATA_URL }}
+          OWNER_REPO=$(echo ${REPO_URL} | sed 's/https:\/\/github.com\///; s/\.git$//')
+          echo "repo=${OWNER_REPO}" >> $GITHUB_OUTPUT
+
+      - name: Checkout data repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.extract_repo.outputs.repo }}
+          ref: ${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+          token: ${{ secrets.GH_APIMDATA_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set the Commit ID
+        id: set_commit_id
+        run: |
+          if [ "${{ github.event.inputs.COMMIT_ID }}" == "" ]; then
+            echo "No commit ID provided, using HEAD^"
+            COMMIT_ID=$(git rev-parse HEAD^)
+          else
+            echo "Using provided commit ID"
+            COMMIT_ID=${{ github.event.inputs.COMMIT_ID }}
+          fi
+          echo "commit_id=${COMMIT_ID}" >> $GITHUB_ENV
+          echo "commit_id=${COMMIT_ID}" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: determine-commit
+    if: github.event.inputs.COMMIT_ID_CHOICE == 'publish-artifacts-in-last-commit' || github.event.inputs.COMMIT_ID_CHOICE == ''
+    uses: ./.github/workflows/update_service_publisher.yaml
+    with:
+      API_MANAGEMENT_ENVIRONMENT: ${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+      COMMIT_ID: ${{ needs.determine-commit.outputs.final_commit_id }}
+      API_MANAGEMENT_SERVICE_NAME: ${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+      API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH: apimartifacts/${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+    secrets: inherit
+
+  force-deploy:
+    needs: determine-commit
+    if: github.event.inputs.COMMIT_ID_CHOICE == 'publish-all-artifacts-in-repo'
+    uses: ./.github/workflows/update_service_publisher.yaml
+    with:
+      API_MANAGEMENT_ENVIRONMENT: ${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+      API_MANAGEMENT_SERVICE_NAME: ${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+      API_MANAGEMENT_SERVICE_OUTPUT_FOLDER_PATH: apimartifacts/${{ github.event.inputs.API_MANAGEMENT_SERVICE_NAME }}
+    secrets: inherit
